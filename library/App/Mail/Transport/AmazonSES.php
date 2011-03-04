@@ -66,7 +66,7 @@ class App_Mail_Transport_AmazonSES extends Zend_Mail_Transport_Abstract
         
         $this->_accessKey = $config['accessKey'];
         $this->_privateKey = $config['privateKey'];
-        $this->_host = (substr($host, -1) == '/')? substr($host, 0, strlen($host) - 1) : $host ;
+        $this->_host = Zend_Uri::factory($host);
     }
 
 
@@ -80,19 +80,28 @@ class App_Mail_Transport_AmazonSES extends Zend_Mail_Transport_Abstract
         $date = gmdate('D, d M Y H:i:s O');
         
         $body = $this->_getRequestBody();
-        $url = sprintf('%s/?%s', $this->_host, $body);
         
         //Send the request
-        $client = new Zend_Http_Client($url);
+        $client = new Zend_Http_Client($this->_host);
         $client->setMethod(Zend_Http_Client::POST);
         $client->setHeaders(array(
             'Date' => $date,
             'X-Amzn-Authorization' => $this->_buildAuthKey($date)
         ));
         $client->setEncType('application/x-www-form-urlencoded');
-        $client->setRawData(urlencode($body));
+        $client->setRawData(rawurlencode($body));
         
-        $response = $client->request();
+        //Get the parameters
+        $chunks = explode('&', $body);
+        $params = array();
+        while(list(, $chunk) = each($chunks)){
+            list($key, $value) = explode('=', $chunk);
+            $params[$key] = $value;
+        }
+        
+        $client->resetParameters();
+        $client->setParameterPost($params);
+        $response = $client->request(Zend_Http_Client::POST);
         
         if($response->getStatus() != 200){
             throw new Exception($response->getBody());
@@ -116,7 +125,7 @@ class App_Mail_Transport_AmazonSES extends Zend_Mail_Transport_Abstract
             $this->_bodyRequestTemplate,
             $this->_mail->getFrom(),
             implode('&', $recipients),
-            urlencode(base64_encode(sprintf("%s\n%s", $this->header, $this->body)))
+            base64_encode(sprintf("%s\n%s\n", $this->header, $this->body))
         );
     }
 
