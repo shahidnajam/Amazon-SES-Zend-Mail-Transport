@@ -79,8 +79,6 @@ class App_Mail_Transport_AmazonSES extends Zend_Mail_Transport_Abstract
     {
         $date = gmdate('D, d M Y H:i:s O');
         
-        $body = $this->_getRequestBody();
-        
         //Send the request
         $client = new Zend_Http_Client($this->_host);
         $client->setMethod(Zend_Http_Client::POST);
@@ -89,14 +87,17 @@ class App_Mail_Transport_AmazonSES extends Zend_Mail_Transport_Abstract
             'X-Amzn-Authorization' => $this->_buildAuthKey($date)
         ));
         $client->setEncType('application/x-www-form-urlencoded');
-        $client->setRawData(rawurlencode($body));
         
-        //Get the parameters
-        $chunks = explode('&', $body);
-        $params = array();
-        while(list(, $chunk) = each($chunks)){
-            list($key, $value) = explode('=', $chunk);
-            $params[$key] = $value;
+        //Build the parameters
+        $params = array(
+            'Action' => 'SendRawEmail',
+            'Source' => $this->_mail->getFrom(),
+            'RawMessage.Data' => base64_encode(sprintf("%s\n%s\n", $this->header, $this->body))
+        );
+        
+        $recipients = explode(',', $this->recipients);
+        while(list($index, $recipient) = each($recipients)){
+            $params[sprintf('Destination.ToAddresses.member.%d', $index + 1)] = $recipient;
         }
         
         $client->resetParameters();
@@ -106,27 +107,6 @@ class App_Mail_Transport_AmazonSES extends Zend_Mail_Transport_Abstract
         if($response->getStatus() != 200){
             throw new Exception($response->getBody());
         }
-    }
-
-
-    /**
-     * Prepare the body of the webservice request
-     *
-     * @return string
-     */
-    private function _getRequestBody(){
-        $recipients = explode(',', $this->recipients);
-        
-        while(list($index, $recipient) = each($recipients)){
-            $recipients[$index] = sprintf('Destination.ToAddresses.member.%d=%s', $index + 1, $recipient);
-        }
-        
-        return sprintf(
-            $this->_bodyRequestTemplate,
-            $this->_mail->getFrom(),
-            implode('&', $recipients),
-            base64_encode(sprintf("%s\n%s\n", $this->header, $this->body))
-        );
     }
 
 
